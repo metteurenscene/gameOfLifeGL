@@ -19,3 +19,4 @@ Click *Clear* to remove all cells and start again with a blank grid.
 
 - border cases are not handled correctly due to clamping.
 
+
