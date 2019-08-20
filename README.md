@@ -6,7 +6,7 @@ Life](https://en.wikipedia.org/wiki/Conway's_Game_of_Life) using WegGL2.
 ## Usage
 
 Load
-`[gameOfLife.html](https://metteurenscene.github.io/gameOfLifeGL/gameOfLifeGL.html)`
+[`gameOfLife.html`](https://metteurenscene.github.io/gameOfLifeGL/gameOfLifeGL.html)
 in your browser and add or remove cells with the mouse.
 Press *Play* to watch its evolution or *Next* to observe it step-by-step. Cells
 can be added or removed at any time.
