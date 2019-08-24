@@ -407,7 +407,7 @@
     //
 
     const mouseToIndex = (col, row, colour) =>
-      (row * gridConfig.size[1] + col) * 4 + colour;
+      (row * gridConfig.size[0] + col) * 4 + colour;
 
     // mouse event handler for manual placement of cells
     canvas.onmouseup = ev => {
