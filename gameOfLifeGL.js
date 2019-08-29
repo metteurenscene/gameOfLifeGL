@@ -28,12 +28,20 @@
     };
 
     let gridConfig = new Grid();
+    const gridGeometry = {
+      x: 10,
+      y: 10,
+      width: gridConfig.size[0] * (gridConfig.elementSize[0] + 2 * gridConfig.lineSize[0]),
+      height: gridConfig.size[1] * (gridConfig.elementSize[1] + 2 * gridConfig.lineSize[1]),
+      cellwidth: gridConfig.elementSize[0] + 2 * gridConfig.lineSize[0],
+      cellheight: gridConfig.elementSize[1] + 2 * gridConfig.lineSize[1],
+    };
 
     //
     // Setup WebGL
     //
 
-    // Initialise the GL context
+    // initialise the GL context
     const gl = canvas.getContext('webgl2');
 
     if (gl === null) {
@@ -52,12 +60,14 @@
     in vec4 a_position;
     in vec2 a_texCoord;
 
+    uniform mat4 u_matrix;
+
     // varying, passed to the fragment shader
-    out vec2 v_texCoord;
+    out vec2 v_gridCoord;
 
     void main() {
-      gl_Position = a_position;
-      v_texCoord = a_texCoord;
+      gl_Position = u_matrix * a_position;
+      v_gridCoord = a_texCoord;
     }
     `;
 
@@ -68,18 +78,19 @@
     // the grid texture
     uniform sampler2D u_grid;
 
+    uniform vec2 u_gridSize;
     uniform ivec2 u_elemSize;
     uniform ivec2 u_lineSize;
     uniform float u_colour[16];
 
-    in vec2 v_texCoord;
+    in vec2 v_gridCoord;
 
     // the colour output of the fragment shader
     out vec4 outColour;
 
     void main() {
       // convert fragment xy coordinates to int
-      ivec2 fragCoord = ivec2(gl_FragCoord.xy);
+      ivec2 fragCoord = ivec2(v_gridCoord * u_gridSize);
 
       ivec2 segmentSize = u_elemSize + 2 * u_lineSize;  // lineSize pixels on either side
       ivec2 rowsCols = fragCoord / segmentSize;         // which grid row/col are we in?
@@ -89,7 +100,7 @@
         ivec2(max(inSegmentPos.x, 1), max(inSegmentPos.y, 1));  // grid pixel or line pixel
 
       // the cell value
-      int cellvalue = int(texture(u_grid, v_texCoord).x);
+      int cellvalue = int(texture(u_grid, v_gridCoord).x);
       int colourbase = (min(pixelType.x, pixelType.y) + 2 * cellvalue) * 4;
 
       outColour = vec4(u_colour[colourbase + 0],
@@ -109,7 +120,9 @@
     const positionAttribLocation = gl.getAttribLocation(program, 'a_position');
     const texCoordAttribLocation = gl.getAttribLocation(program, 'a_texCoord');
     // look up uniforms
+    const matrixUniformLocation = gl.getUniformLocation(program, 'u_matrix');
     const gridUniformLocation = gl.getUniformLocation(program, 'u_grid');
+    const gridSizeUnifLocation = gl.getUniformLocation(program, 'u_gridSize');
     const elemSizeUnifLocation = gl.getUniformLocation(program, 'u_elemSize');
     const lineSizeUnifLocation = gl.getUniformLocation(program, 'u_lineSize');
     const colourUniformLocation = gl.getUniformLocation(program, 'u_colour');
@@ -180,14 +193,30 @@
                                                srcType,
                                                grid);
 
-    const gridPositions = [ -1, -1, 0, 1, -1, 0, -1, 1, 0,
-                            -1,  1, 0, 1, -1, 0,  1, 1, 0 ];
+    const gridx2 = gridGeometry.x + gridGeometry.width;
+    const gridy2 = gridGeometry.y + gridGeometry.height;
+    const gridPositions = [ gridGeometry.x, gridGeometry.y, 0,
+                            gridx2, gridGeometry.y, 0,
+                            gridGeometry.x, gridy2, 0,
+                            gridGeometry.x,  gridy2, 0,
+                            gridx2, gridGeometry.y, 0,
+                            gridx2, gridy2, 0 ];
 
     const gridTexCoords = [ 0.0, 1.0, 1.0, 1.0, 0.0, 0.0,
                             0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
 
+    const projectionMatrix = [
+      2 / canvas.width, 0, 0, 0,
+      0, 2 / canvas.height, 0, 0,
+      0, 0, 0, 0,
+      -1, -1, 0, 1,
+    ];
+
     gl.useProgram(program);
     gl.uniform1i(gridUniformLocation, 0);       // we are using texture unit 0
+    gl.uniformMatrix4fv(matrixUniformLocation, false, projectionMatrix);
+    gl.uniform2fv(gridSizeUnifLocation,
+                  new Float32Array([gridGeometry.width, gridGeometry.height]));
     gl.uniform2iv(elemSizeUnifLocation, new Int32Array(gridConfig.elementSize));
     gl.uniform2iv(lineSizeUnifLocation, new Int32Array(gridConfig.lineSize));
     gl.uniform1fv(colourUniformLocation, gridConfig.gridColours);
@@ -199,6 +228,20 @@
     /*
      * Grid update
      */
+    const stepVertexSource = `#version 300 es
+
+    // attributes
+    in vec4 a_position;
+    in vec2 a_texCoord;
+
+    // varying, passed to the fragment shader
+    out vec2 v_gridCoord;
+
+    void main() {
+      gl_Position = a_position;
+      v_gridCoord = a_texCoord;
+    }
+    `;
 
     const stepFragmentSource = `#version 300 es
 
@@ -208,7 +251,7 @@
     uniform sampler2D u_input;
     uniform float u_lookup[10];
 
-    in vec2 v_texCoord;
+    in vec2 v_gridCoord;
 
     out vec4 outColour;
 
@@ -217,25 +260,26 @@
       vec2 onePixel = vec2(1) / vec2(textureSize(u_input, 0));
 
       // count neighbours
-      int neighbours = int(texture(u_input, v_texCoord + onePixel * vec2(-1, -1)).x);
-      neighbours += int(texture(u_input, v_texCoord + onePixel * vec2(-1, 0)).x);
-      neighbours += int(texture(u_input, v_texCoord + onePixel * vec2(-1, 1)).x);
-      neighbours += int(texture(u_input, v_texCoord + onePixel * vec2(0, 1)).x);
-      neighbours += int(texture(u_input, v_texCoord + onePixel * vec2(1, 1)).x);
-      neighbours += int(texture(u_input, v_texCoord + onePixel * vec2(1, 0)).x);
-      neighbours += int(texture(u_input, v_texCoord + onePixel * vec2(1, -1)).x);
-      neighbours += int(texture(u_input, v_texCoord + onePixel * vec2(0, -1)).x);
+      int neighbours = int(texture(u_input, v_gridCoord + onePixel * vec2(-1, -1)).x);
+      neighbours += int(texture(u_input, v_gridCoord + onePixel * vec2(-1, 0)).x);
+      neighbours += int(texture(u_input, v_gridCoord + onePixel * vec2(-1, 1)).x);
+      neighbours += int(texture(u_input, v_gridCoord + onePixel * vec2(0, 1)).x);
+      neighbours += int(texture(u_input, v_gridCoord + onePixel * vec2(1, 1)).x);
+      neighbours += int(texture(u_input, v_gridCoord + onePixel * vec2(1, 0)).x);
+      neighbours += int(texture(u_input, v_gridCoord + onePixel * vec2(1, -1)).x);
+      neighbours += int(texture(u_input, v_gridCoord + onePixel * vec2(0, -1)).x);
 
-      int cell = int(texture(u_input, v_texCoord).x);
+      int cell = int(texture(u_input, v_gridCoord).x);
 
       outColour = vec4(u_lookup[min(4, neighbours) * 2 + cell], 0.0, 0.0, 0.0);
     }
     `;
 
     // compile the shader and link
+    const stepVertexShader = compileShader(gl, stepVertexSource, gl.VERTEX_SHADER);
     const stepFragmentShader = compileShader(gl, stepFragmentSource, gl.FRAGMENT_SHADER);
 
-    const stepProgram = linkProgram(gl, vertexShader, stepFragmentShader);
+    const stepProgram = linkProgram(gl, stepVertexShader, stepFragmentShader);
 
     // look up attributes
     const stepPositionAttribLoc = gl.getAttribLocation(stepProgram, 'a_position');
@@ -305,10 +349,13 @@
     const lookup = [ 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0 ];
     gl.uniform1fv(stepLookupUniformLoc, lookup);
 
+    const stepGridPositions = [ -1, -1, 0, 1, -1, 0, -1, 1, 0,
+                            -1,  1, 0, 1, -1, 0,  1, 1, 0 ];
+
     const stepGridTexCoords = [ 0.0, 0.0, 1.0, 0.0, 0.0, 1.0,
                                 0.0, 1.0, 1.0, 0.0, 1.0, 1.0 ];
 
-    uploadBuffer(stepPositionBuffer, new Float32Array(gridPositions));
+    uploadBuffer(stepPositionBuffer, new Float32Array(stepGridPositions));
     uploadBuffer(stepTexCoordBuffer, new Float32Array(stepGridTexCoords));
 
     /*
@@ -334,7 +381,7 @@
     }
 
     //
-    // Initial draw
+    // initial draw
     //
 
     // clear the canvas
@@ -409,12 +456,20 @@
     const mouseToIndex = (col, row, colour) =>
       (row * gridConfig.size[0] + col) * 4 + colour;
 
+    // OpenGL origin is bottom left, CSS origin is top left
+    const topoffset = canvas.height - gridGeometry.height - gridGeometry.y;
+
     // mouse event handler for manual placement of cells
     canvas.onmouseup = ev => {
-      const col = Math.floor(
-        (ev.clientX - canvas.offsetLeft) / (gridConfig.elementSize[0] + 2 * gridConfig.lineSize[0]));
-      const row = Math.floor(
-        (ev.clientY - canvas.offsetTop) / (gridConfig.elementSize[1] + 2 * gridConfig.lineSize[1]));
+      const mouseX = ev.clientX - canvas.offsetLeft - gridGeometry.x;
+      const mouseY = ev.clientY - canvas.offsetTop - topoffset;
+      if ( mouseX < 0 || mouseX >= gridGeometry.width ||
+           mouseY < 0 || mouseY >= gridGeometry.height )
+        return;
+
+      const col = Math.floor(mouseX / gridGeometry.cellwidth);
+      const row = Math.floor(mouseY / gridGeometry.cellheight);
+
       const index = mouseToIndex(col, row, 0);
 
       if (step > -1) {
