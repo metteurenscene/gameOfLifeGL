@@ -4,6 +4,19 @@
   function main() {
     const canvas = document.getElementById('gl-canvas');
 
+    // adjust canvas size
+    const mainwidth = canvas.parentNode.clientWidth;
+    const mainheight = canvas.parentNode.clientHeight;
+    canvas.width = mainwidth;
+    canvas.height = mainheight - 6;     // the number 6 to subtract has been
+                                        // determined through tests to ensure
+                                        // the canvas and footer stay within the
+                                        // height of the page
+
+    const cellSize = 12;        // default cell size is 10 pixels + 2 pixel border
+    const gridCols = Math.floor(canvas.width / cellSize);
+    const gridRows = Math.floor(canvas.height / cellSize);
+
     // grid configuration
     function Grid(gridCols = 40, gridRows = 40,
                   elemWidth = 10, elemHeight = 10,
@@ -27,10 +40,10 @@
       this.playColours.push(1.0, 0.0, 0.0, 1.0); // colour for living cell
     };
 
-    let gridConfig = new Grid();
+    let gridConfig = new Grid(gridCols, gridRows);
     const gridGeometry = {
-      x: 10,
-      y: 10,
+      x: Math.floor((canvas.width - (gridConfig.size[0] * (gridConfig.elementSize[0] + 2 * gridConfig.lineSize[0]))) / 2),
+      y: Math.floor((canvas.height - (gridConfig.size[1] * (gridConfig.elementSize[1] + 2 * gridConfig.lineSize[1]))) / 2),
       width: gridConfig.size[0] * (gridConfig.elementSize[0] + 2 * gridConfig.lineSize[0]),
       height: gridConfig.size[1] * (gridConfig.elementSize[1] + 2 * gridConfig.lineSize[1]),
       cellwidth: gridConfig.elementSize[0] + 2 * gridConfig.lineSize[0],
@@ -205,6 +218,7 @@
     const gridTexCoords = [ 0.0, 1.0, 1.0, 1.0, 0.0, 0.0,
                             0.0, 0.0, 1.0, 1.0, 1.0, 0.0 ];
 
+    // matrix to transform from pixel spae to OpenGL space [-1.0 .. 1.0]
     const projectionMatrix = [
       2 / canvas.width, 0, 0, 0,
       0, 2 / canvas.height, 0, 0,

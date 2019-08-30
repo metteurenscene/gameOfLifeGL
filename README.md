@@ -15,7 +15,7 @@ Click *Clear* to remove all cells and start again with a blank grid.
 
 ### Limitations
 
-- The grid size is currently hard coded to 40 x 40 cells;
+- The grid initially expands to the full size of the window, but doesn't adapt to changes;
 
 - border cases are not handled correctly due to clamping.
 

@@ -1,3 +1,27 @@
+html {
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  margin: 0;
+}
+
+header,
+footer {
+  flex-shrink: 0;
+}
+
+main {
+  flex-grow: 1;
+}
+
+h1 {
+  margin: 0;
+}
+
 #gl-canvas {
   cursor:crosshair;
 }
