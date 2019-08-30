@@ -13,21 +13,29 @@
                                         // the canvas and footer stay within the
                                         // height of the page
 
-    const cellSize = 12;        // default cell size is 10 pixels + 2 pixel border
-    const gridCols = Math.floor(canvas.width / cellSize);
-    const gridRows = Math.floor(canvas.height / cellSize);
-
     // grid configuration
-    function Grid(gridCols = 40, gridRows = 40,
-                  elemWidth = 10, elemHeight = 10,
-                  lineWidth = 1, lineHeight = 1) {
+    function Grid(width, height, cellWidth = 10, cellHeight = 10, borderSize = 1) {
+      this.cellInnerSize = [ cellWidth, cellHeight ];
+      this.cellBorderSize = borderSize;
+      this.cellOuterSize = [ cellWidth + 2 * borderSize,
+                             cellHeight + 2 * borderSize ];
 
-      this.size = [gridCols, gridRows];
+      this.size = [
+        Math.floor(width / this.cellOuterSize[0]),      // grid columns
+        Math.floor(height / this.cellOuterSize[1]),     // grid rows
+      ];
 
-      this.elementSize = [elemWidth, elemHeight];
-      this.lineSize = [lineWidth, lineHeight];
+      this.pixelSize = [ this.size[0] * this.cellOuterSize[0],  // width in pixels
+                         this.size[1] * this.cellOuterSize[1],  // height in pixels
+      ];
 
-      this.grid = new Uint8Array(gridCols * gridRows * 4);
+      this.colourChannels = 4;          // the grid is stored in a RGBA texture
+
+      // offset to centre the grid within the canvas
+      this.gridX = Math.floor((width - this.pixelSize[0]) / 2);
+      this.gridY = Math.floor((height - this.pixelSize[1]) / 2);
+
+      this.grid = new Uint8Array(this.size[0] * this.size[1] * this.colourChannels);
 
       this.gridColours = [0.7, 0.7, 0.7, 1.0];   // colour for empty cell border
       this.gridColours.push(1.0, 1.0, 1.0, 1.0); // colour for empty cell
@@ -40,15 +48,7 @@
       this.playColours.push(1.0, 0.0, 0.0, 1.0); // colour for living cell
     };
 
-    let gridConfig = new Grid(gridCols, gridRows);
-    const gridGeometry = {
-      x: Math.floor((canvas.width - (gridConfig.size[0] * (gridConfig.elementSize[0] + 2 * gridConfig.lineSize[0]))) / 2),
-      y: Math.floor((canvas.height - (gridConfig.size[1] * (gridConfig.elementSize[1] + 2 * gridConfig.lineSize[1]))) / 2),
-      width: gridConfig.size[0] * (gridConfig.elementSize[0] + 2 * gridConfig.lineSize[0]),
-      height: gridConfig.size[1] * (gridConfig.elementSize[1] + 2 * gridConfig.lineSize[1]),
-      cellwidth: gridConfig.elementSize[0] + 2 * gridConfig.lineSize[0],
-      cellheight: gridConfig.elementSize[1] + 2 * gridConfig.lineSize[1],
-    };
+    let gridConfig = new Grid(canvas.width, canvas.height);
 
     //
     // Setup WebGL
@@ -93,7 +93,7 @@
 
     uniform vec2 u_gridSize;
     uniform ivec2 u_elemSize;
-    uniform ivec2 u_lineSize;
+    uniform int u_lineSize;
     uniform float u_colour[16];
 
     in vec2 v_gridCoord;
@@ -206,13 +206,13 @@
                                                srcType,
                                                grid);
 
-    const gridx2 = gridGeometry.x + gridGeometry.width;
-    const gridy2 = gridGeometry.y + gridGeometry.height;
-    const gridPositions = [ gridGeometry.x, gridGeometry.y, 0,
-                            gridx2, gridGeometry.y, 0,
-                            gridGeometry.x, gridy2, 0,
-                            gridGeometry.x,  gridy2, 0,
-                            gridx2, gridGeometry.y, 0,
+    const gridx2 = gridConfig.gridX + gridConfig.pixelSize[0];
+    const gridy2 = gridConfig.gridY + gridConfig.pixelSize[1];
+    const gridPositions = [ gridConfig.gridX, gridConfig.gridY, 0,
+                            gridx2, gridConfig.gridY, 0,
+                            gridConfig.gridX, gridy2, 0,
+                            gridConfig.gridX,  gridy2, 0,
+                            gridx2, gridConfig.gridY, 0,
                             gridx2, gridy2, 0 ];
 
     const gridTexCoords = [ 0.0, 1.0, 1.0, 1.0, 0.0, 0.0,
@@ -229,10 +229,9 @@
     gl.useProgram(program);
     gl.uniform1i(gridUniformLocation, 0);       // we are using texture unit 0
     gl.uniformMatrix4fv(matrixUniformLocation, false, projectionMatrix);
-    gl.uniform2fv(gridSizeUnifLocation,
-                  new Float32Array([gridGeometry.width, gridGeometry.height]));
-    gl.uniform2iv(elemSizeUnifLocation, new Int32Array(gridConfig.elementSize));
-    gl.uniform2iv(lineSizeUnifLocation, new Int32Array(gridConfig.lineSize));
+    gl.uniform2fv(gridSizeUnifLocation, new Float32Array(gridConfig.pixelSize));
+    gl.uniform2iv(elemSizeUnifLocation, new Int32Array(gridConfig.cellInnerSize));
+    gl.uniform1i(lineSizeUnifLocation, gridConfig.cellBorderSize);
     gl.uniform1fv(colourUniformLocation, gridConfig.gridColours);
 
     uploadBuffer(positionBuffer, new Float32Array(gridPositions));
@@ -468,21 +467,21 @@
     //
 
     const mouseToIndex = (col, row, colour) =>
-      (row * gridConfig.size[0] + col) * 4 + colour;
+      (row * gridConfig.size[0] + col) * gridConfig.colourChannels + colour;
 
     // OpenGL origin is bottom left, CSS origin is top left
-    const topoffset = canvas.height - gridGeometry.height - gridGeometry.y;
+    const topoffset = canvas.height - gridConfig.pixelSize[1] - gridConfig.gridY;
 
     // mouse event handler for manual placement of cells
     canvas.onmouseup = ev => {
-      const mouseX = ev.clientX - canvas.offsetLeft - gridGeometry.x;
+      const mouseX = ev.clientX - canvas.offsetLeft - gridConfig.gridX;
       const mouseY = ev.clientY - canvas.offsetTop - topoffset;
-      if ( mouseX < 0 || mouseX >= gridGeometry.width ||
-           mouseY < 0 || mouseY >= gridGeometry.height )
+      if ( mouseX < 0 || mouseX >= gridConfig.pixelSize[0] ||
+           mouseY < 0 || mouseY >= gridConfig.pixelSize[1] )
         return;
 
-      const col = Math.floor(mouseX / gridGeometry.cellwidth);
-      const row = Math.floor(mouseY / gridGeometry.cellheight);
+      const col = Math.floor(mouseX / gridConfig.cellOuterSize[0]);
+      const row = Math.floor(mouseY / gridConfig.cellOuterSize[1]);
 
       const index = mouseToIndex(col, row, 0);
 
@@ -535,7 +534,7 @@
         gl.bindTexture(gl.TEXTURE_2D, gridTexture);
       }
 
-      gridConfig.grid = new Uint8Array(gridConfig.size[0] * gridConfig.size[1] * 4);
+      gridConfig.grid = new Uint8Array(gridConfig.size[0] * gridConfig.size[1] * gridConfig.colourChannels);
       uploadGrid(gridConfig.grid);
       setFramebuffer(null, canvas.width, canvas.height);
       draw();
